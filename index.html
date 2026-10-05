@@ -175,8 +175,7 @@
   </div>
 </header>
 
-<div class="live-banner"><i class="ti ti-broadcast"></i> Live shared directory (Supabase-backed) — edits are visible to everyone with this link within a few seconds.
-  <button onclick="testStorage()" style="margin-left:auto;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:white;border-radius:14px;padding:0.2rem 0.7rem;font-size:0.72rem;cursor:pointer">Test Connection</button>
+<div class="live-banner" style="background:#5f5e5a;"><i class="ti ti-eye"></i> Read-only view — editing is temporarily paused and will return on Oct 17, 2026. The information below is current as of the last update.
 </div>
 
 <div class="error-banner" id="errorBanner"></div>
@@ -261,7 +260,6 @@
 <p class="hint"><i class="ti ti-hand-click"></i> Click a group to expand its full details.</p>
 <div class="group-list" id="groupList"></div>
 
-<button class="add-btn" onclick="openModal()"><i class="ti ti-plus"></i> Add Group</button>
 <button class="export-btn" onclick="exportHTML()"><i class="ti ti-download"></i> Export Backup</button>
 
 <div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
@@ -600,7 +598,22 @@ function migrateLastUpdated(groupsArr) {
   return { migrated, changed };
 }
 
+// ---- READ-ONLY MODE (active until Oct 17, 2026) ----
+// To restore live editing after the quota resets, set READ_ONLY = false.
+const READ_ONLY = true;
+
 async function init() {
+  if (READ_ONLY) {
+    // Serve entirely from the embedded snapshot. No Supabase reads or writes,
+    // so this consumes zero quota while READ_ONLY is true.
+    groups = DEFAULT_GROUPS.map(g => Object.assign({}, g));
+    lastChangedTime = null;
+    setSyncStatus('ok', 'Read-only');
+    updateLastChangeDisplay();
+    document.getElementById('loadingScreen').style.display = 'none';
+    renderCards();
+    return; // no polling, no network calls
+  }
   try {
     const rows = await supaFetchRow();
     if (rows.length === 0) {
@@ -834,17 +847,20 @@ function renderCards() {
     html += '<div class="eligibility-section"><strong><i class="ti ti-clipboard-check" style="font-size:12px;vertical-align:-1px;margin-right:4px"></i>Eligibility Criteria</strong>'+(g.eligibility||'No eligibility criteria specified.')+'</div>';
     html += '<div class="detail-footer">';
     html += '<span class="referral-pill '+referralClass(g.referral)+'"><i class="ti ti-send" style="font-size:11px;margin-right:3px;vertical-align:-1px"></i>'+(g.referral||'See clinic')+'</span>';
-    html += '<div class="footer-actions">';
-    html += '<button class="icon-btn edit" onclick="event.stopPropagation();openEdit(\''+id+'\')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>';
-    if (!g.inactive) {
-      html += '<button class="icon-btn inactivate" onclick="event.stopPropagation();toggleInactive(\''+id+'\')" title="Mark inactive"><i class="ti ti-circle-x"></i> Inactivate</button>';
-      if (!g.full) html += '<button class="icon-btn full-btn" onclick="event.stopPropagation();toggleFull(\''+id+'\')" title="Mark full"><i class="ti ti-lock"></i> Mark Full</button>';
-      else html += '<button class="icon-btn unfull-btn" onclick="event.stopPropagation();toggleFull(\''+id+'\')" title="Mark open"><i class="ti ti-lock-open"></i> Mark Open</button>';
-    } else {
-      html += '<button class="icon-btn activate" onclick="event.stopPropagation();toggleInactive(\''+id+'\')" title="Mark active"><i class="ti ti-circle-check"></i> Activate</button>';
+    if (!READ_ONLY) {
+      html += '<div class="footer-actions">';
+      html += '<button class="icon-btn edit" onclick="event.stopPropagation();openEdit(\''+id+'\')" title="Edit"><i class="ti ti-pencil"></i> Edit</button>';
+      if (!g.inactive) {
+        html += '<button class="icon-btn inactivate" onclick="event.stopPropagation();toggleInactive(\''+id+'\')" title="Mark inactive"><i class="ti ti-circle-x"></i> Inactivate</button>';
+        if (!g.full) html += '<button class="icon-btn full-btn" onclick="event.stopPropagation();toggleFull(\''+id+'\')" title="Mark full"><i class="ti ti-lock"></i> Mark Full</button>';
+        else html += '<button class="icon-btn unfull-btn" onclick="event.stopPropagation();toggleFull(\''+id+'\')" title="Mark open"><i class="ti ti-lock-open"></i> Mark Open</button>';
+      } else {
+        html += '<button class="icon-btn activate" onclick="event.stopPropagation();toggleInactive(\''+id+'\')" title="Mark active"><i class="ti ti-circle-check"></i> Activate</button>';
+      }
+      html += '<button class="icon-btn del" onclick="event.stopPropagation();requestDelete(\''+id+'\')" title="Delete"><i class="ti ti-trash"></i> Delete</button>';
+      html += '</div>';
     }
-    html += '<button class="icon-btn del" onclick="event.stopPropagation();requestDelete(\''+id+'\')" title="Delete"><i class="ti ti-trash"></i> Delete</button>';
-    html += '</div></div></div></div>';
+    html += '</div></div></div>';
   });
   list.innerHTML = html;
   document.getElementById('lastUpdated').textContent = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
