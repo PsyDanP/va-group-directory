@@ -175,7 +175,9 @@
   </div>
 </header>
 
-<div class="live-banner" style="background:#5f5e5a;"><i class="ti ti-eye"></i> Read-only view — editing is temporarily paused and will return on Oct 17, 2026. The information below is current as of the last update.
+<!-- FIX 2: live green banner restored (was the gray read-only banner) -->
+<div class="live-banner"><i class="ti ti-broadcast"></i> Live shared directory (Supabase-backed) — edits are visible to everyone with this link within a few seconds.
+  <button onclick="testStorage()" style="margin-left:auto;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:white;border-radius:14px;padding:0.2rem 0.7rem;font-size:0.72rem;cursor:pointer">Test Connection</button>
 </div>
 
 <div class="error-banner" id="errorBanner"></div>
@@ -260,6 +262,8 @@
 <p class="hint"><i class="ti ti-hand-click"></i> Click a group to expand its full details.</p>
 <div class="group-list" id="groupList"></div>
 
+<!-- FIX 3: Add Group button restored -->
+<button class="add-btn" onclick="openModal()"><i class="ti ti-plus"></i> Add Group</button>
 <button class="export-btn" onclick="exportHTML()"><i class="ti ti-download"></i> Export Backup</button>
 
 <div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
@@ -326,11 +330,15 @@ const SUPA_HEADERS = {
 };
 
 // ---- Polling config ----
-const POLL_INTERVAL_MS = 60000; // how often a visible tab checks for updates (was 6000)
+const POLL_INTERVAL_MS = 60000; // how often a visible tab checks for updates
 
 // Baseline "Last Updated" stamp applied to seed data / any legacy row that predates this field.
 const SEED_STAMP = '2026-07-30 09:00 AM';
 
+// ============================================================================
+// >>> PASTE THE DEFAULT_GROUPS ARRAY FROM PART 2 HERE <<<
+// Replace this entire placeholder line (including the brackets) with the
+// "const DEFAULT_GROUPS = [ ... ];" block from the Part 2 message.
 const DEFAULT_GROUPS = [
   {"name":"ACC BHIP Orientation (Mon)","day":"Monday","time":"1000-1100","location":"VVC","wing":"VVC","sessions":1,"nextStart":"","followStart":"","recurring":false,"recurringNote":"","maxPts":15,"facilitator":"Jennifer Eighmey and Shani Nilo","type":"Orientation","modality":"Virtual","clinic":"LOM ACC VVC MH BHIP101 GRP1","grouplocation":"BHIP","referral":"Provider referral","eligibility":"Veteran can be referred for BHIP Orientation before or after completing the BHIP intake.","lastUpdated":"2026-09-09 02:01 PM","id":"seed-0"},
   {"name":"ACC BHIP Orientation (Wed)","day":"Wednesday","time":"0700-0800","location":"VVC","wing":"VVC","sessions":1,"nextStart":"","followStart":"","recurring":false,"recurringNote":"","maxPts":15,"facilitator":"Taisha Harmon and Michael Walker","type":"Orientation","modality":"Virtual","clinic":"LOM ACC VVC MH BHIP101 GRP1","grouplocation":"BHIP","referral":"Provider referral","eligibility":"Veteran can be referred before or after BHIP intake. Place RTC.","lastUpdated":"2026-09-09 02:02 PM","id":"seed-1"},
@@ -459,6 +467,7 @@ const DEFAULT_GROUPS = [
   {"name":"ACT for PTSD Group (Thurs - VVC)","day":"Thursday","time":"9:00AM - 10:00AM","location":"VVC","wing":"","sessions":10,"nextStart":"2026-10-22","followStart":"2027-02-04","recurring":false,"recurringNote":"","maxPts":10,"facilitator":"Annielynn Berger","type":"PTSD","modality":"Virtual","clinic":"VV VVC MH BHIP12 ACTP GRP","grouplocation":"BHIP","referral":"Consult","eligibility":"Veterans with a diagnosis of chronic PTSD who could benefit from learning skills to address traumatic stress reactions and experiential avoidance.","lastUpdated":"2026-09-29 10:36 AM","id":"g-1790703376044-rrwemr"},
   {"name":"Calmer Life - a CBT-based Treatment for Anxiety in Older Adults with/without Depression","day":"Thursday","time":"1300-1430","location":"VVC","wing":"","sessions":13,"nextStart":"2026-11-12","followStart":"TBD","recurring":false,"recurringNote":"","maxPts":10,"facilitator":"Angela Romeo","type":"Anxiety","modality":"Virtual","clinic":"LOM ACC VVC MH BHIP7 CALM GRP","grouplocation":"BHIP","referral":"Consult","eligibility":"Veteran at least 60 y/o, in BHIP with PRIMARY ANXIETY D/O DX, evidence of resources for and ability to use VVC, any cognitive decline is no greater than MCI.\nExclusions:\nVeteran with a primary PTSD dx; please consider PTSD/trauma-focused svcs.\nVeteran with cognitive impairment greater than MCI; please consider consultation with geropsych.\nVeteran high risk for suicide or otherwise in crisis; please consider referring after stabilization if appropriate. Veteran with active substance use disorders who are unable to commit to not using prior to, or during, group. Please consider referring to group when substance use well-managed and veteran able to make such commitment. Thank you and please alert me in the consult.","lastUpdated":"2026-09-30 02:27 PM","id":"g-1790800640882-xhxls4"}
 ];
+// ============================================================================
 
 let groups = [];
 let filters = { day:'All', type:'All', modality:'All', grouplocation:'All', status:'All' };
@@ -598,21 +607,20 @@ function migrateLastUpdated(groupsArr) {
   return { migrated, changed };
 }
 
-// ---- READ-ONLY MODE (active until Oct 17, 2026) ----
-// To restore live editing after the quota resets, set READ_ONLY = false.
-const READ_ONLY = true;
+// ---- READ-ONLY MODE ----
+// FIX 1: set to false for normal live operation (reads, writes, polling against Supabase).
+// Set to true to serve entirely from the embedded snapshot (zero Supabase quota usage).
+const READ_ONLY = false;
 
 async function init() {
   if (READ_ONLY) {
-    // Serve entirely from the embedded snapshot. No Supabase reads or writes,
-    // so this consumes zero quota while READ_ONLY is true.
     groups = DEFAULT_GROUPS.map(g => Object.assign({}, g));
     lastChangedTime = null;
     setSyncStatus('ok', 'Read-only');
     updateLastChangeDisplay();
     document.getElementById('loadingScreen').style.display = 'none';
     renderCards();
-    return; // no polling, no network calls
+    return;
   }
   try {
     const rows = await supaFetchRow();
@@ -628,14 +636,12 @@ async function init() {
       lastChangedTime = parsed.lastChanged || null;
       lastSerialized = rows[0].data;
 
-      // Run the one-time type migration; only writes back to Supabase if something actually changed
       const { migrated, changed } = migrateGroupTypes(groups);
       if (changed) {
         groups = migrated;
-        await persistGroups(false); // false = don't bump "Last Directory Change" for an automatic migration
+        await persistGroups(false);
       }
 
-      // Run the one-time "lastUpdated" backfill for legacy rows
       const luMigration = migrateLastUpdated(groups);
       if (luMigration.changed) {
         groups = luMigration.migrated;
@@ -667,7 +673,6 @@ async function persistGroups(bumpTimestamp = true) {
   try {
     const rows = await supaUpdateRow(dataStr);
     if (rows.length === 0) {
-      // row didn't exist yet — insert it
       await supaInsertRow(dataStr);
     }
     lastSerialized = dataStr;
@@ -681,7 +686,6 @@ async function persistGroups(bumpTimestamp = true) {
   }
 }
 
-// ---- Polling: check for remote updates, but skip when the tab is hidden or a modal is open ----
 async function pollNow() {
   if (isModalOpen || document.hidden) return;
   try {
@@ -694,13 +698,11 @@ async function pollNow() {
       updateLastChangeDisplay();
       renderCards();
     }
-  } catch (e) { /* silent — transient poll failure, will retry next cycle */ }
+  } catch (e) { /* silent — transient poll failure */ }
 }
 
 function startPolling() {
-  // Visible tabs check on a timer; background tabs are skipped by the guard in pollNow().
   setInterval(pollNow, POLL_INTERVAL_MS);
-  // When the user switches back to this tab, refresh immediately instead of waiting for the next cycle.
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) pollNow();
   });
@@ -905,7 +907,7 @@ function updateChips() {
   const wrap = document.getElementById('activeChips');
   const btn = document.getElementById('filterToggleBtn');
   const active = Object.entries(filters).filter(([,v]) => v !== 'All');
-  wrap.innerHTML = active.map(([k,v]) => `<span class="active-chip">${GROUP_LABELS[k]}: ${v}<button onclick="clearFilter('${k}')" title="Remove filter">×</button></span>`).join('');
+  wrap.innerHTML = active.map(([k,v]) => '<span class="active-chip">' + GROUP_LABELS[k] + ': ' + v + '<button onclick="clearFilter(\'' + k + '\')" title="Remove filter">×</button></span>').join('');
   btn.classList.toggle('has-active', active.length > 0);
 }
 
