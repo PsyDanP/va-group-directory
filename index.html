@@ -112,6 +112,12 @@
   .start-toggle:hover { opacity: 0.8; }
   .start-toggle.full.on { background: #c0392b; border-color: #c0392b; color: white; }
   .start-toggle.recruit.on { background: #1a8a4f; border-color: #1a8a4f; color: white; }
+  .start-flags { display: flex; gap: 0.9rem; margin-top: 0.35rem; }
+  .start-flags label { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0; font-size: 0.74rem; font-weight: 600; cursor: pointer; }
+  .start-flags label.f-full { color: #b71c1c; }
+  .start-flags label.f-rec { color: #0b6b3a; }
+  .start-flags input { width: auto; }
+  .start-flags.disabled { opacity: 0.45; pointer-events: none; }
   .icon-btn.full-btn { color: #7a3a00; background: #fde8d5; }
   .icon-btn.unfull-btn { color: #1a3a5c; background: #e8edf4; }
   .icon-btn:hover { opacity: 0.75; }
@@ -283,11 +289,20 @@
       <div class="form-group"><label>Location / Room</label><input id="f-location" placeholder="e.g. Room 2B-105, VVC, or actual site name"></div>
       <div class="form-group"><label>Wing of Location</label><input id="f-wing" placeholder="e.g. Building 3, East Wing"></div>
       <div class="form-group"><label># of Sessions</label><input id="f-sessions" type="number" min="0" placeholder="0 = Ongoing"></div>
-      <div class="form-group"><label>Next Start Date</label><input id="f-nextstart" type="date"></div>
+      <div class="form-group"><label>Next Start Date</label><input id="f-nextstart" type="date">
+        <div class="start-flags" id="flags-next">
+          <label class="f-full"><input type="checkbox" id="f-nextfull" onchange="flagChanged('next','full')"> Full</label>
+          <label class="f-rec"><input type="checkbox" id="f-nextrec" onchange="flagChanged('next','rec')"> Recruiting</label>
+        </div>
+      </div>
       <div class="form-group"><label>Following Start Date</label>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <input id="f-followstart" type="date" style="flex:1">
           <button type="button" id="tbd-btn" onclick="toggleTBD()" style="border:1px solid #c8d0de;background:white;border-radius:8px;padding:0.38rem 0.6rem;font-size:0.76rem;cursor:pointer;white-space:nowrap;color:#333;">TBD</button>
+        </div>
+        <div class="start-flags" id="flags-follow">
+          <label class="f-full"><input type="checkbox" id="f-followfull" onchange="flagChanged('follow','full')"> Full</label>
+          <label class="f-rec"><input type="checkbox" id="f-followrec" onchange="flagChanged('follow','rec')"> Recruiting</label>
         </div>
       </div>
       <div class="form-group full">
@@ -793,12 +808,6 @@ function startRow(g, k, label, icon, val) {
   h += '<span class="'+cls+'">'+formatDate(val)+'</span>';
   if (full) h += '<span class="status-badge" style="background:#fdecea;color:#b71c1c;border:1px solid #f1a9a0">Full</span>';
   if (rec) h += '<span class="status-badge" style="background:#e2f5ec;color:#0b6b3a;border:1px solid #8fd3ab">Recruiting</span>';
-  if (!READ_ONLY && !g.inactive) {
-    h += '<span class="start-toggles">' +
-      '<button class="start-toggle full'+(full?' on':'')+'" onclick="event.stopPropagation();toggleStartFlag(\''+g.id+'\',\''+k+'\',\'full\')" title="Mark this start date full"><i class="ti ti-lock"></i>Full</button>' +
-      '<button class="start-toggle recruit'+(rec?' on':'')+'" onclick="event.stopPropagation();toggleStartFlag(\''+g.id+'\',\''+k+'\',\'recruiting\')" title="Mark this start date recruiting"><i class="ti ti-user-plus"></i>Recruiting</button>' +
-      '</span>';
-  }
   return h + '</span></div>';
 }
 
@@ -910,24 +919,6 @@ async function toggleInactive(id) {
   await persistGroups();
 }
 
-async function toggleStartFlag(id, k, flag) {
-  const i = findIdx(id); if (i < 0) return;
-  const g = groups[i];
-  // lock in legacy value so the other date isn't affected, then drop the old group-level flag
-  const nf = startFull(g,'next'), ff = startFull(g,'follow');
-  g.nextFull = nf; g.followFull = ff; delete g.full;
-  if (flag === 'full') {
-    g[k+'Full'] = !g[k+'Full'];
-    if (g[k+'Full']) g[k+'Recruiting'] = false;
-  } else {
-    g[k+'Recruiting'] = !g[k+'Recruiting'];
-    if (g[k+'Recruiting']) g[k+'Full'] = false;
-  }
-  groups[i].lastUpdated = nowStamp();
-  renderCards();
-  await persistGroups();
-}
-
 function toggleCard(id) {
   expandedId = expandedId === id ? null : id;
   renderCards();
@@ -992,6 +983,18 @@ function toggleTBD() {
   }
 }
 
+function flagChanged(k, which) {
+  const full = document.getElementById('f-'+k+'full'), rec = document.getElementById('f-'+k+'rec');
+  if (which === 'full' && full.checked) rec.checked = false;
+  if (which === 'rec' && rec.checked) full.checked = false;
+}
+function setFlagsDisabled(dis) {
+  ['next','follow'].forEach(k => {
+    document.getElementById('flags-'+k).classList.toggle('disabled', dis);
+    if (dis) { document.getElementById('f-'+k+'full').checked = false; document.getElementById('f-'+k+'rec').checked = false; }
+  });
+}
+
 function toggleRecurring() {
   const checked = document.getElementById('f-recurring').checked;
   const noteWrap = document.getElementById('recurringNoteWrap');
@@ -1002,6 +1005,7 @@ function toggleRecurring() {
   nextInput.disabled = checked;
   followInput.disabled = checked;
   tbdBtn.disabled = checked;
+  setFlagsDisabled(checked);
   if (checked) {
     nextInput.value = '';
     if (followInput.type === 'text') { followInput.type = 'date'; }
@@ -1021,6 +1025,8 @@ function clearForm() {
   if (btn){btn.style.background='white';btn.style.color='#333';btn.style.borderColor='#c8d0de';btn.disabled=false;}
   const recurCheckbox = document.getElementById('f-recurring');
   if (recurCheckbox) recurCheckbox.checked = false;
+  ['f-nextfull','f-nextrec','f-followfull','f-followrec'].forEach(i => { const c = document.getElementById(i); if (c) c.checked = false; });
+  document.querySelectorAll('.start-flags').forEach(e => e.classList.remove('disabled'));
   const noteWrap = document.getElementById('recurringNoteWrap');
   if (noteWrap) noteWrap.style.display = 'none';
 }
@@ -1056,6 +1062,11 @@ function openEdit(id) {
   document.getElementById('f-nextstart').disabled = !!g.recurring;
   document.getElementById('f-followstart').disabled = !!g.recurring;
   document.getElementById('tbd-btn').disabled = !!g.recurring;
+  document.getElementById('f-nextfull').checked = startFull(g,'next');
+  document.getElementById('f-nextrec').checked = startRecruiting(g,'next');
+  document.getElementById('f-followfull').checked = startFull(g,'follow');
+  document.getElementById('f-followrec').checked = startRecruiting(g,'follow');
+  document.querySelectorAll('.start-flags').forEach(e => e.classList.toggle('disabled', !!g.recurring));
   document.getElementById('modalTitle').innerHTML = '<i class="ti ti-pencil" style="margin-right:0.4rem;vertical-align:-2px"></i>Edit Group';
   document.getElementById('modalSaveBtn').textContent = 'Save Changes';
   document.getElementById('modalOverlay').classList.add('open');
@@ -1115,6 +1126,10 @@ async function saveGroup() {
     followStart: recurring ? '' : (followEl.value||''),
     recurring: recurring,
     recurringNote: recurring ? recurringNote : '',
+    nextFull: !recurring && document.getElementById('f-nextfull').checked,
+    nextRecruiting: !recurring && document.getElementById('f-nextrec').checked,
+    followFull: !recurring && document.getElementById('f-followfull').checked,
+    followRecruiting: !recurring && document.getElementById('f-followrec').checked,
     maxPts: parseInt(document.getElementById('f-maxpts').value)||'',
     facilitator: document.getElementById('f-facilitator').value.trim(),
     type: document.getElementById('f-type').value,
@@ -1130,8 +1145,6 @@ async function saveGroup() {
     const i = findIdx(editingId);
     entry.id = editingId;
     entry.inactive = groups[i].inactive;
-    ['nextFull','followFull','nextRecruiting','followRecruiting'].forEach(f => { if (groups[i][f] !== undefined) entry[f] = groups[i][f]; });
-    if (groups[i].full !== undefined && groups[i].nextFull === undefined) entry.full = groups[i].full;
     groups[i] = entry;
   } else {
     entry.id = genId();
